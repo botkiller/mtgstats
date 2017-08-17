@@ -1,0 +1,48 @@
+```{r}
+# create deckid column from url
+# ==============================
+csv.decks <- read.csv('data/decks.csv')
+
+csv.decks$deckid <- str_extract(csv.decks$listurl,'(/[0-9]+)') %>%
+  str_replace('/','')
+
+csv.decks
+
+write.csv(csv.decks, file = 'data/decks.csv')
+
+head(read.csv('data/decks.csv'))
+
+```
+
+```{r}
+
+csv.cards <- read.csv('data/cards.csv')
+
+basic.lands <- c('plains','island','swamp','mountain','forest')
+
+non.basics <- csv.cards %>%
+  filter(!(tolower(csv.cards$card.name) %in% basic.lands) & (deck.section == 'md'))
+
+non.basics
+# from group of cards, tell me what the most appropriate deck.name is 
+
+non.basics %>%
+  select(deck.id,card.name)
+```
+
+```{r}
+# install.packages("caret", dependencies=c("Depends", "Suggests"))
+# library(caret)
+
+
+
+
+
+
+control <- trainControl(method = 'cv', number = 10)
+metric <- 'Accuracy'
+
+set.seed(7)
+fit.lda <- train(Species~., data = iris, method = 'lda', metric = metric, trControl = control)
+```
+

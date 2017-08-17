@@ -1,0 +1,6 @@
+```{r}
+deckcsv <- read.csv('data/deck.csv')
+
+deckscsv
+```
+

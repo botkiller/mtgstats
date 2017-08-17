@@ -1,0 +1,110 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r}
+# libs/pkgs
+# =========
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(rvest)
+library(stringr)
+library(tidyr)
+library(jsonlite)
+library(plotly)
+```
+
+```{r}
+# load scraped data from csv
+# ==========================
+decks <- read.csv('data/decks.csv') %>%
+  mutate( deckdate = as.Date(date, '%m/%d/%Y'))
+
+relevant.decks <- decks %>%
+  group_by(deckname) %>%
+  count(deckname) %>%
+  filter(n > 75)
+
+all.decks <- decks %>%
+  group_by(deckname, deckdate) %>%
+  count(deckname)
+
+final.decks <- merge( x = relevant.decks , y = all.decks , by.x = "deckname" , by.y = "deckname" )
+
+
+str(final.decks)
+```
+
+```{r}
+# rough graph of standard meta over time
+# ======================================
+
+
+
+bigdates <- read.csv('data/sets.csv', stringsAsFactors = FALSE) %>%
+  mutate(sdate = as.numeric(as.Date(sdate))) %>%
+  filter(ssize == 'lg') %>%
+  select(sdate)
+
+smalldates <- read.csv('data/sets.csv', stringsAsFactors = FALSE) %>%
+  mutate(sdate = as.numeric(as.Date(sdate))) %>% 
+  filter(ssize == 'sm') %>%
+  select(sdate)
+
+bandates <- as.numeric(as.Date(c('2017-01-20', '2017-04-28')))
+
+p <- ggplot(final.decks, aes( x = deckdate , y = ..count.. , fill = deckname), fig.width=100, fig.height=110) +
+  geom_density(position = "fill") +
+  theme(legend.position = "none") +
+  ylab('Archetype Prevalence') +
+  xlab('Date') + 
+  geom_vline(xintercept = unlist(bigdates), linetype = "solid", color = "black") + 
+  geom_vline(xintercept = unlist(smalldates), linetype = "dotted", color = "gray") +
+  geom_vline(xintercept = bandates, linetime = "solid", color = "red")
+  
+meta.graph <- ggplotly(p) %>%
+  layout(autosize = F, width = 750, height = 400)
+
+meta.graph
+```
+
+```{r}
+cards <- read.csv('data/cards.csv', stringsAsFactors = FALSE)
+
+c <- count(cards)
+
+card.data <- cards %>%
+  mutate( deck.date = as.Date(deck.date, '%m/%d/%Y')) %>%
+  filter(deck.section == 'md') %>%
+  select(card.name, deck.date)
+
+basic.lands <- list('plains','island','mountain','swamp') 
+  basic.lands
+
+rel.cards <- cards %>% 
+  group_by(card.name) %>%
+  count(card.name) %>%
+  filter(n > 500)
+
+card.graph.data <- merge( x = card.data , y = rel.cards , by.x = "card.name" , by.y = "card.name" ) %>%
+  filter(deck.date >= '2016-10-01')
+
+str(card.graph.data)
+```
+
+```{r}
+card.plot <- ggplot(card.graph.data, aes( x = deck.date , y = ..count.. , fill = card.name), fig.width=100, fig.height=110) +
+  geom_density(position = "fill") +
+  theme(legend.position = "none") +
+  ylab('Card Prevalence') +
+  xlab('Date') 
+  
+card.plot <- ggplotly(card.plot)
+
+card.plot
+```
+
+
+

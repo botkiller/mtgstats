@@ -1,0 +1,220 @@
+```{r, results='hide'}
+# install.packages('rvest')
+# install.packages('stringr')
+# install.packages('tidyr')
+# install.packages('jsonlite')
+# install.packages('dplyr')
+# install.packages('ggplot2')
+# install.packages('plotly')
+
+library(rvest)
+library(stringr)
+library(tidyr)
+library(jsonlite)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+```
+
+```{r, results='hide'}
+# functions
+# =========
+
+rawdata <- function(url,node) {
+  if(node == '.json') {
+    json <- fromJSON(url)
+    
+    return(json)
+  }
+  
+  webpage <- read_html(url)
+  extracted <- html_nodes(webpage,node)
+  
+  return(extracted)
+}
+
+decksec <- function(page,node){
+    cardrow <- html_nodes(page,node)
+    
+    qty <- cardrow %>%
+      str_extract('card-qty">(.*?)<') %>%
+      str_replace('card-qty">','') %>%
+      str_replace('<','')
+    
+    cardname <- cardrow %>%
+      str_extract('card-name">(.*?)<') %>%
+      str_replace('card-name">','') %>%
+      str_replace('<','')
+    
+    decsec <- data.frame(qty,cardname,stringsAsFactors = FALSE)
+    return(decsec)
+  }
+
+decklist <- function(url) {
+  page <- read_html(url)
+  
+  for(i in 1:2){
+    if(i == 1){
+      # grab the main deck:
+      node <- '.subdeck:nth-child(1) .subdeck-group__card'
+      md <- decksec(page,node)
+    }
+    if(i == 2){
+      # grab the sideboard: 
+      node <- '.subdeck+ .subdeck .subdeck-group__card'
+      sb <- decksec(page,node)
+    }
+  }
+  
+  decklist <- list(md,sb)
+  return(decklist)
+}
+
+write.decks <- function(){
+  archetype_node = 'td:nth-child(2) a'
+  date_node = 'td:nth-child(6)'
+  listurl_node = 'td:nth-child(2) a'
+  decks <- data.frame( deckname = character(0) , date = character(0) , listurl = character(0) , stringsAsFactors = FALSE)
+  
+  for(i in 1:200){
+  url <- str_c('http://decks.tcgplayer.com/magic/deck/search?page=',i,'&format=standard&startdate=1-1-2012&p1=true&p2=true&p3t4=true&p5t8=true&p9t16=true&p17t32=true&p33t64=true')
+    
+  deckname <- rawdata(url,archetype_node) %>%
+    str_extract('>(.*?)<') %>%
+    str_replace('>', '') %>%
+    str_replace('<', '')
+  
+  date <- rawdata(url,date_node) %>%
+    str_extract('\\n(.*?)\\r') %>%
+    str_replace('\\n', '') %>%
+    str_replace('\\r', '') %>%
+    str_trim('both')
+  
+  listurl <- rawdata(url,listurl_node) %>%
+    str_extract('<a href="(.*?)">') %>%
+    str_replace('<a href="','') %>%
+    str_replace('">','')
+
+  staging_decks <- data.frame( deckname , date , listurl , stringsAsFactors = FALSE )
+  decks <- rbind(decks,staging_decks)
+  }
+  
+  write.csv(decks, file="data/decks.csv")
+}
+
+write.sets <- function(){
+  scryfallapi <- 'https://api.scryfall.com/sets'
+  scryfallsets <- 'https://scryfall.com/sets'
+  
+  ccountnode <- 'td:nth-child(4) a'
+  scodenode <- 'small'
+  
+  mtgsets <- rawdata(scryfallapi,'.json')
+  setcounts <- data.frame(
+    
+    setcd = rawdata(scryfallsets, scodenode) %>%
+      str_replace('<small>','') %>%
+      str_replace('</small>',''), 
+    
+    cardct = rawdata(scryfallsets,ccountnode) %>%
+      str_extract('">(.*?)</a>') %>%
+      str_replace('">','') %>%
+      str_replace('</a>',''), 
+    
+    stringsAsFactors = FALSE
+  )
+  
+  mtgsets$data$code <- toupper(mtgsets$data$code)
+  mtgsets <- merge( x = mtgsets$data , y = setcounts , by.x = 'code' , by.y = 'setcd' )
+  
+  mtgsets$released_at <- mtgsets$released_at %>%
+    str_extract('(.*?)T') %>%
+    str_replace('T','')
+  
+  bigsets <- mtgsets %>%
+    filter(toupper(block) == toupper(name) & set_type == 'expansion') %>%
+    arrange(as.Date(released_at))
+  
+  smallsets <- mtgsets %>% 
+    filter( (toupper(block) != toupper(name) & set_type == 'expansion') | (set_type == 'core') ) %>%
+    arrange(as.Date(released_at))
+  
+  sm <- data.frame( scode = smallsets$code , sdate = smallsets$released_at , ssize = 'sm', stringsAsFactors = FALSE)
+  lg <- data.frame( scode = bigsets$code , sdate = bigsets$released_at , ssize = 'lg', stringsAsFactors = FALSE)
+  
+  setoutput <- rbind(sm,lg) %>%
+    filter(as.Date(sdate) >= '2011-01-01') %>%
+    arrange(as.Date(sdate))
+
+  write.csv(setoutput, file = "data/sets.csv", quote = FALSE)
+}
+
+```
+
+```{r}
+# write cards.csv
+# ===============
+decklisturls <- read.csv('data/decks.csv', stringsAsFactors = FALSE) %>%
+  mutate(listurl = str_c('http://decks.tcgplayer.com',listurl))
+
+urls <- data.frame( decklisturl = decklisturls$listurl, deckdate = decklisturls$date, deck.id = decklisturls$deckid, stringsAsFactors = FALSE )
+
+cards <- data.frame ( deck.id = numeric(0) , card.quantity = numeric(0) , card.name = character(0) , deck.section = character(0) )
+
+# seq_along(urls$decklisturl
+
+for(i in seq_along(urls$decklisturl)) {
+  mdnode <- '.subdeck:nth-child(1) .subdeck-group__card'
+  sbnode <- '.subdeck+ .subdeck .subdeck-group__card'
+  
+  url <- urls$decklisturl[i]
+  page <- read_html(url) 
+
+  md <- decksec(page,mdnode)
+  sb <- decksec(page,sbnode)
+  dl <- list( md = md, sb = sb )
+
+  if(length(md$qty) == 0 | length(sb$qty) == 0){
+    next
+  } 
+  
+  mdfr <- data.frame( 
+      deck.id = urls$deck.id[i] , 
+      deck.date = urls$deckdate[i], 
+      card.quantity = dl$md$qty , 
+      card.name = dl$md$cardname , 
+      deck.section = 'md' )
+  
+  sbfr <- data.frame( 
+      deck.id = urls$deck.id[i] , 
+      deck.date = urls$deckdate[i], 
+      card.quantity = dl$sb$qty , 
+      card.name = dl$sb$cardname , 
+      deck.section = 'sb' )
+  
+  cards <- rbind(cards, mdfr, sbfr)
+}
+
+head(cards)
+
+write.csv(cards , file="data/cards2.csv")
+```
+
+```{r}
+# data pulls
+# ==========
+write.sets()
+write.decks()
+write.cards()
+```
+
+```{r}
+# data checks
+# ===========
+decks <- read.csv('data/decks.csv')
+sets <- read.csv('data/sets.csv')
+
+decks
+sets
+```
+
